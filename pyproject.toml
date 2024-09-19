@@ -1,0 +1,38 @@
+[project]
+name = "jax-trainer"
+version = "0.1.0"
+description = "A fully sharded data prallel trainer for jax"
+authors = [
+    {name = "Rares Dolga", email = "rares.dolga.16@ucl.ac.uk"},
+]
+dependencies = [
+    "jax[cuda12]==0.4.31",
+    "tqdm==4.66.2",
+    "wandb==0.16.4",
+    "black>=24.8.0",
+    "flax==0.8.4",
+    "orbax-checkpoint==0.5.17",
+    "matplotlib>=3.9.1",
+    "pip>=24.2",
+    "jaxtyping>=0.2.34",
+    "torch>=2.4.1",
+]
+
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+build-backend = "pdm.backend"
+requires = ["pdm-backend"]
+
+
+[tool.pdm]
+distribution = true
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["trainer*"]
+exclude = ["tests*"]
