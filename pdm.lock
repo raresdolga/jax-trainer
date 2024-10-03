@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:9ff134499629182112c4f3df21a5f11111df055c41c8bb4d48239df7f2fcbea4"
+content_hash = "sha256:94b4c2de0e62a370930ed6a7104ca06f9469dc62b8e7d6b3340bb833dce71ed0"
 
 [[metadata.targets]]
 requires_python = ">=3.10"
@@ -19,16 +19,6 @@ groups = ["default"]
 files = [
     {file = "absl-py-2.1.0.tar.gz", hash = "sha256:7820790efbb316739cde8b4e19357243fc3608a152024288513dd968d7d959ff"},
     {file = "absl_py-2.1.0-py3-none-any.whl", hash = "sha256:526a04eadab8b4ee719ce68f204172ead1027549089702d99b9059f129ff1308"},
-]
-
-[[package]]
-name = "appdirs"
-version = "1.4.4"
-summary = "A small Python module for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
-groups = ["default"]
-files = [
-    {file = "appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128"},
-    {file = "appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41"},
 ]
 
 [[package]]
@@ -1772,21 +1762,21 @@ files = [
 
 [[package]]
 name = "wandb"
-version = "0.16.4"
+version = "0.17.2"
 requires_python = ">=3.7"
 summary = "A CLI and library for interacting with the Weights & Biases API."
 groups = ["default"]
 dependencies = [
-    "Click!=8.0.0,>=7.1",
-    "GitPython!=3.1.29,>=1.0.0",
-    "PyYAML",
-    "appdirs>=1.4.3",
+    "click!=8.0.0,>=7.1",
     "docker-pycreds>=0.4.0",
-    "protobuf!=4.21.0,<5,>=3.12.0; python_version < \"3.9\" and sys_platform == \"linux\"",
-    "protobuf!=4.21.0,<5,>=3.15.0; python_version == \"3.9\" and sys_platform == \"linux\"",
-    "protobuf!=4.21.0,<5,>=3.19.0; python_version > \"3.9\" and sys_platform == \"linux\"",
-    "protobuf!=4.21.0,<5,>=3.19.0; sys_platform != \"linux\"",
+    "gitpython!=3.1.29,>=1.0.0",
+    "platformdirs",
+    "protobuf!=4.21.0,<6,>=3.12.0; python_version < \"3.9\" and sys_platform == \"linux\"",
+    "protobuf!=4.21.0,<6,>=3.15.0; python_version == \"3.9\" and sys_platform == \"linux\"",
+    "protobuf!=4.21.0,<6,>=3.19.0; python_version > \"3.9\" and sys_platform == \"linux\"",
+    "protobuf!=4.21.0,<6,>=3.19.0; sys_platform != \"linux\"",
     "psutil>=5.0.0",
+    "pyyaml",
     "requests<3,>=2.0.0",
     "sentry-sdk>=1.0.0",
     "setproctitle",
@@ -1794,8 +1784,13 @@ dependencies = [
     "typing-extensions; python_version < \"3.10\"",
 ]
 files = [
-    {file = "wandb-0.16.4-py3-none-any.whl", hash = "sha256:bb9eb5aa2c2c85e11c76040c4271366f54d4975167aa6320ba86c3f2d97fe5fa"},
-    {file = "wandb-0.16.4.tar.gz", hash = "sha256:8752c67d1347a4c29777e64dc1e1a742a66c5ecde03aebadf2b0d62183fa307c"},
+    {file = "wandb-0.17.2-py3-none-any.whl", hash = "sha256:4bd351be28cea87730365856cfaa72f72ceb787accc21bad359dde5aa9c4356d"},
+    {file = "wandb-0.17.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:638353a2d702caedd304a5f1e526ef93a291c984c109fcb444262a57aeaacec9"},
+    {file = "wandb-0.17.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:824e33ca77af87f87a9cf1122acba164da5bf713adc9d67332bc686028921ec9"},
+    {file = "wandb-0.17.2-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:032ca5939008643349af178a8b66b8047a1eefcb870c4c4a86e22acafde6470f"},
+    {file = "wandb-0.17.2-py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9558bab47a0c8ac4f22cfa2d43f91d1bc1f75d4255629286db674fe49fcd30e5"},
+    {file = "wandb-0.17.2-py3-none-win32.whl", hash = "sha256:4bc176e3c81be216dc889fcd098341eb17a14b04e080d4343ce3f0b1740abfc1"},
+    {file = "wandb-0.17.2-py3-none-win_amd64.whl", hash = "sha256:62cd707f38b5711971729dae80343b8c35f6003901e690166cc6d526187a9785"},
 ]
 
 [[package]]

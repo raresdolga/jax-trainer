@@ -1,13 +1,15 @@
-"""This is an integration end to end test for the trainer"""
+"""Integration end to end test for the trainer"""
 
+from typing import Callable, List, Dict
 import os
 from dataclasses import dataclass
 from flax import linen as nn
 import jax
 from jax import numpy as jnp
 from torch.utils.data import Dataset
-from latte_trans.evals.base import Evaluator
-from latte_trans.trainer.jax_single_host import Trainer
+
+from trainer.evals.base import Evaluator
+from trainer.jax_single_host import Trainer
 
 
 class DummyModule(nn.Module):
@@ -19,17 +21,37 @@ class DummyModule(nn.Module):
 
 
 class DummyEval(Evaluator):
+    """Evaluator with dummy output"""
     def __init__(self) -> None:
-        pass
+        self._config = None
 
     def compute_metrics(self, *args, **kwargs):
+        """Dummy metrics compute
+
+        Returns:
+            _type_: _description_
+        """
         return -1
 
-    def evaluate(self, trainer_eval_fn, prefix="eval_", **kwargs):
+    def evaluate(self, trainer_eval_fn: Callable, prefix:str = "eval_", **kwargs):
+        """Dummy evaluate
+
+        Args:
+            trainer_eval_fn (_type_): _description_
+            prefix (str, optional): _description_. Defaults to "eval_".
+
+        Returns:
+            Dict[str, Any]: Output metrics
+        """
         return {prefix + "loss": 1.0}
 
 
 class DummyDataset(Dataset):
+    """Toy dataset
+
+    Args:
+        Dataset (_type_): _description_
+    """
     def __init__(self, key) -> None:
         self.x = jax.random.normal(key, (100, 10, 1))
 
@@ -42,6 +64,7 @@ class DummyDataset(Dataset):
 
 @dataclass
 class Config:
+    """Example config"""
     batchnorm: bool = False
     epochs: int = 5
     eval_steps: int = 4
@@ -57,7 +80,15 @@ class Config:
     max_seq_len: int = 100
 
 
-def data_collator(batch):
+def data_collator(batch: List[Dict[str, jax.Array]]):
+    """Concatenate examles in a batch
+
+    Args:
+        batch List[Dict[str, jax.Array]]: _description_
+
+    Returns:
+        _type_: _description_
+    """
     input_ids, labels = [], []
     for element in batch:
         input_ids.append(element["input_ids"])
@@ -66,6 +97,9 @@ def data_collator(batch):
 
 
 def test_trainer():
+    """
+    Entry point  for testing
+    """
     key = jax.random.PRNGKey(seed=0)
     init_key, train_key, data_key, key = jax.random.split(key, 4)
     train_data = DummyDataset(data_key)

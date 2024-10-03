@@ -26,12 +26,14 @@ from flax import linen as nn
 import wandb
 from orbax import checkpoint as ocp
 import optax
+from optax.schedules import Schedule
 from torch.utils.data import DataLoader
 import wandb.apis
 import wandb.sdk
 
-from latte_trans.trainer.lr_schedules import vaswani_lr_schedule
-from latte_trans.evals.base import Evaluator
+from trainer.lr_schedules import vaswani_lr_schedule
+from trainer.evals.base import Evaluator
+from trainer.config import Config
 
 PyTree = Any
 Metrics = Dict[str, Tuple[jax.Array, ...]]
@@ -62,11 +64,10 @@ def eval_step(
     state: train_state.TrainState,
     batch: Tuple[jax.Array],
 ) -> Dict[str, jax.Array]:
-    dropout_train_key = jax.random.fold_in(key=model_rng, data=state.step)
     params = state.params
     batch = jax.lax.stop_gradient(batch)
     if batchnorm:
-        output, updates = state.apply_fn(
+        output, _ = state.apply_fn(
             {"params": params, "batch_stats": state.batch_stats},
             *batch,
             train=False,
@@ -85,10 +86,19 @@ def train_step(
     batchnorm: bool,
     model_rng: jax.random.PRNGKey,
     state: train_state.TrainState,
-    batch: jax.Array,
+    batch: Tuple[jax.Array],
 ) -> Tuple[train_state.TrainState, jax.Array]:
+    """ One train step
 
-    # jax.debug.print("Drouput is: {x}", x=model_rng)
+    Args:
+        batchnorm (bool): whether to use batch normalisation or not
+        model_rng (jax.random.PRNGKey): random key
+        state (train_state.TrainState): Flax Trainer state
+        batch (jax.Array): Input data, in the order expected by the model.
+
+    Returns:
+        Tuple[train_state.TrainState, jax.Array]: new state and the loss
+    """
     dropout_train_key = jax.random.fold_in(key=model_rng, data=state.step)
 
     def loss_fn(params):
@@ -120,7 +130,16 @@ def train_step(
     return state, loss
 
 
-def get_scheduler(config: PyTree, total_steps: int) -> Callable:
+def get_scheduler(config: Config, total_steps: int) -> Schedule:
+    """Create a scheduler from config
+
+    Args:
+        config (Config): Project config
+        total_steps (int): number of training steps
+
+    Returns:
+        Callable: S
+    """
     total_steps = total_steps // config.grad_accumulation_steps
     warmup_steps = 0
     if config.warmup > 0:
@@ -158,7 +177,15 @@ def get_scheduler(config: PyTree, total_steps: int) -> Callable:
     return lr_scheduler
 
 
-def prepare_optimizer(config: PyTree, total_steps: int) -> optax.GradientTransformation:
+def prepare_optimizer(config: Config, total_steps: int) -> Tuple[optax.GradientTransformation, Schedule]:
+    """Create optimizer and lr_scheduler
+    Args:
+        config (Config): Configuration for the project
+        total_steps (Config): Number of training steps
+
+    Returns:
+        Tuple[optax.GradientTransformation, Schedule]: Optimizer
+    """
     lr_scheduler = get_scheduler(config=config, total_steps=total_steps)
     optimizer = optax.inject_hyperparams(optax.adamw)(
         learning_rate=lr_scheduler, weight_decay=config.weight_decay
@@ -178,6 +205,18 @@ def init_train_state(
     init_rng: jax.random.PRNGKey,
     batch: Tuple[jax.Array],
 ) -> train_state.TrainState:
+    """Initialiases the model and creates the training state
+
+    Args:
+        batchnorm (bool): Whether the flax model uses batch norm or not
+        model (nn.Module): flax module
+        optimizer (optax.GradientTransformation): Optimizer 
+        init_rng (jax.random.PRNGKey): initialisation key
+        batch (Tuple[jax.Array]): Input data, in the order expected by the model.
+
+    Returns:
+        train_state.TrainState: Flax trainig state
+    """
     init_rng, arg_rng, dropout_rng = jax.random.split(init_rng, 3)
     variables = model.init(arg_rng, *batch, train=False)
     # Create a State
@@ -200,16 +239,26 @@ def init_train_state(
 
 
 def best_loss(structured: Any) -> float:
+    """Minimum loss 
+
+    Args:
+        structured (Any): Pytree of losses for each checkpoint
+
+    Returns:
+        float: _description_
+    """
     flat, tree = tree_flatten(structured)
     flat = [float(x) for x in flat]
     return min(flat)
 
 
 class TrainState(train_state.TrainState):
+    """Train state which supports dropout key"""
     key: jax.Array
 
 
 class BatchNormTrainState(train_state.TrainState):
+    """Train state which supports dropout key and stores batch statistics for batchnorm"""
     key: jax.Array
     batch_stats: Any
 
@@ -245,8 +294,6 @@ class Trainer:
         self.model_inputs_orded = model_inputs_orded
 
         self._eval_metrics = []
-
-        # os.makedirs(os.path.join(self._out_dir, "checkpoints"), exist_ok=True)
 
         options = ocp.CheckpointManagerOptions(
             max_to_keep=self.max_checkpoints,
@@ -325,6 +372,11 @@ class Trainer:
         )
 
     def sample_data(self) -> Tuple[jax.Array]:
+        """Return Data sample
+
+        Returns:
+            Tuple[jax.Array]: Data in the order expected by the model
+        """
         data = next(iter(self.train_dl))
         # TODO: Investigate why dictionary does not work for jit
         data = tuple([data[k] for k in self.model_inputs_orded])
@@ -334,6 +386,15 @@ class Trainer:
     def place_on_device(
         batch: Iterable[jax.Array], data_sharding: NamedSharding = None
     ) -> Iterable[jax.Array]:
+        """Move data to the device dicated by the sharding
+
+        Args:
+            batch (Iterable[jax.Array]): Input data
+            data_sharding (NamedSharding, optional): Description of how data should be placed on the device. Defaults to None.
+
+        Returns:
+            Iterable[jax.Array]: Input data
+        """
         if data_sharding is None:
             return batch
         for k, v in batch.items():
@@ -341,6 +402,11 @@ class Trainer:
         return batch
 
     def safe_wandb_log(self, log_data: Dict[str, Any]):
+        """Log data wiith the wandb_run if config allows for it.
+
+        Args:
+            log_data (Dict[str, Any]): Data to log
+        """
         if self.wandb_run is not None:
             generations = log_data.pop("generations", None)
             self.wandb_run.log(log_data)
@@ -352,6 +418,16 @@ class Trainer:
     def get_shardings(
         self, init_rng: jax.random.PRNGKey, data: Tuple[jax.Array]
     ) -> Tuple[Mesh, NamedSharding, NamedSharding]:
+        """Create descriptions on how the model and data should be split across devices.
+        For this trainer the mdoel is replicated and data is split across batch dimension
+
+        Args:
+            init_rng (jax.random.PRNGKey): initialisation key
+            data (Tuple[jax.Array]): Data as expected by the model.
+
+        Returns:
+            Tuple[Mesh, NamedSharding, NamedSharding]: The devices on the host and description on how to place arrays on them.
+        """
         init_rng, abstract_state_rng = jax.random.split(init_rng)
         # total global devices
         num_devices = len(jax.devices())
@@ -377,6 +453,11 @@ class Trainer:
         return mesh, state_sharding, data_sharding
 
     def calc_total_steps(self) -> int:
+        """Convert epochs into number of training steps.
+
+        Returns:
+            int: Total number of train steps.
+        """
         epochs = self.config.epochs
         if self.config.train_steps is None:
             total_steps = epochs * (
@@ -393,6 +474,16 @@ class Trainer:
         check_dir: str = None,
         step_number: int = None,
     ) -> Tuple[train_state.TrainState, Dict[str, Any]]:
+        """Load state from the checkpoint
+
+        Args:
+            empty_state (train_state.TrainState): a dummy input shape with shape and device placement info.
+            check_dir (str, optional): Directory with checkpoints. Defaults to None.
+            step_number (int, optional): The specific step to load. Defaults to None.
+
+        Returns:
+            Tuple[train_state.TrainState, Dict[str, Any]]: Loaded train state and metadata, like iteration number when training stopped. 
+        """
         options = ocp.CheckpointManagerOptions(create=False)
         mngr = ocp.CheckpointManager(
             check_dir,
@@ -419,58 +510,6 @@ class Trainer:
             ),
         )
         return restored.state, restored.metadata
-
-    @staticmethod
-    def load_avg_trainer_state(
-        empty_state: train_state.TrainState,
-        check_dir: str = None,
-    ) -> Tuple[train_state.TrainState, Dict[str, Any]]:
-        """Average all available checkpoints"""
-        options = ocp.CheckpointManagerOptions(create=False)
-        mngr = ocp.CheckpointManager(
-            check_dir,
-            options=options,
-            item_handlers={
-                "state": ocp.StandardCheckpointHandler(),
-                "metadata": ocp.JsonCheckpointHandler(),
-            },
-        )
-
-        available_checkpoints = mngr.all_steps(read=True)
-        jax.debug.print(
-            "Loading last of the availabel checkpoints: {x}",
-            x=available_checkpoints,
-        )
-
-        step_number = available_checkpoints[0]
-        restored = mngr.restore(
-            step_number,
-            args=ocp.args.Composite(
-                state=ocp.args.StandardRestore(empty_state),
-                metadata=ocp.args.JsonRestore(),
-            ),
-        )
-
-        state, metadata = restored.state, restored.metadata
-        params = state.params
-        for i in range(1, len(available_checkpoints)):
-            step_number = available_checkpoints[i]
-            restored = mngr.restore(
-                step_number,
-                args=ocp.args.Composite(
-                    state=ocp.args.StandardRestore(empty_state),
-                    metadata=ocp.args.JsonRestore(),
-                ),
-            )
-            params2 = restored.state.params
-            # add weights
-            params = jax.tree_util.tree_map(lambda x, y: x + y, params, params2)
-        # average weights
-        params = jax.tree_util.tree_map(
-            lambda x: x / len(available_checkpoints), params
-        )
-        state = state.replace(params=params)
-        return state, metadata
 
     @staticmethod
     def create_zero_state(

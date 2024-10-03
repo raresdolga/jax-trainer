@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "jax[cuda12]==0.4.31",
     "tqdm==4.66.2",
-    "wandb==0.16.4",
+    "wandb==0.17.2",
     "black>=24.8.0",
     "flax==0.8.4",
     "orbax-checkpoint==0.5.17",

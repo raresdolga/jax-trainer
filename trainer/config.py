@@ -1,6 +1,7 @@
+"""Config object passed to trainer and models.
+"""
 from typing import Literal
 from flax import struct
-from jax import numpy as jnp
 import yaml
 
 LR_DECAY = Literal["cosine"] | Literal["linear"] | Literal["constant"]
@@ -49,7 +50,7 @@ class Config:
     # The project under which run is saved
     project: str = "diffusion"
     # The team/account under which the project is saved
-    entity: str = "baesian-learning"
+    entity: str = "dummy_project"
     # tokenizer path: used for pretrained tokenizers
     tokenizer_path: str = None
     # name of the dataset used for classification
