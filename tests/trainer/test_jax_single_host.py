@@ -8,8 +8,8 @@ import jax
 from jax import numpy as jnp
 from torch.utils.data import Dataset
 
-from trainer.evals.base import Evaluator
-from trainer.jax_single_host import Trainer
+from tax.evals.base import Evaluator
+from tax.train.jax_single_host import Trainer
 
 
 class DummyModule(nn.Module):
@@ -22,6 +22,7 @@ class DummyModule(nn.Module):
 
 class DummyEval(Evaluator):
     """Evaluator with dummy output"""
+
     def __init__(self) -> None:
         self._config = None
 
@@ -33,7 +34,7 @@ class DummyEval(Evaluator):
         """
         return -1
 
-    def evaluate(self, trainer_eval_fn: Callable, prefix:str = "eval_", **kwargs):
+    def evaluate(self, trainer_eval_fn: Callable, prefix: str = "eval_", **kwargs):
         """Dummy evaluate
 
         Args:
@@ -52,6 +53,7 @@ class DummyDataset(Dataset):
     Args:
         Dataset (_type_): _description_
     """
+
     def __init__(self, key) -> None:
         self.x = jax.random.normal(key, (100, 10, 1))
 
@@ -65,6 +67,7 @@ class DummyDataset(Dataset):
 @dataclass
 class Config:
     """Example config"""
+
     batchnorm: bool = False
     epochs: int = 5
     eval_steps: int = 4

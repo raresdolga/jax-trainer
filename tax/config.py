@@ -1,10 +1,12 @@
 """Config object passed to trainer and models.
 """
+
 from typing import Literal
 from flax import struct
 import yaml
 
 LR_DECAY = Literal["cosine"] | Literal["linear"] | Literal["constant"]
+EMBED_TYPE = Literal["rope"] | Literal["xpos"] | Literal["absolute"] | Literal["nope"]
 
 
 @struct.dataclass
@@ -68,6 +70,8 @@ class Config:
     # percentage of steps to do warmup out of total steps
     warmup_pc: float = 0
     # exact number of warmup steps, takes precedance over warmup_pc
+    # weight decay for optimizer
+    weight_decay: float = 0.01
     warmup: int = 0
     # learning rate decay function
     lr_decay_fn: LR_DECAY = "cosine"
@@ -94,9 +98,11 @@ class Config:
 
 
 @struct.dataclass
-class TextDecoderConfig(Config):
-    """Language specific task"""
+class ModelConfig(Config):
+    """Configration for building a model"""
 
+    # type of embedding
+    embed_type: EMBED_TYPE = "absolute"
     # number layers
     nlayers: int = 6
     # number heads
@@ -122,8 +128,6 @@ class TextDecoderConfig(Config):
     # dropout each layer
     dropout_att: float = 0.0
     dropout: float = 0.1
-    # weight decay for optimizer
-    weight_decay: float = 0.01
     # used for initialisation
     initializer_range: float = 0.02
     # normalize before or after mlp

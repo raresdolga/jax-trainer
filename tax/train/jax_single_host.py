@@ -31,9 +31,9 @@ from torch.utils.data import DataLoader
 import wandb.apis
 import wandb.sdk
 
-from trainer.lr_schedules import vaswani_lr_schedule
-from trainer.evals.base import Evaluator
-from trainer.config import Config
+from tax.lr_schedules import vaswani_lr_schedule
+from tax.evals.base import Evaluator
+from tax.config import Config
 
 PyTree = Any
 Metrics = Dict[str, Tuple[jax.Array, ...]]
@@ -60,7 +60,6 @@ def fold_rng_over_axis(rng: jax.random.PRNGKey, axis_name: str) -> jax.random.PR
 # Eval function
 def eval_step(
     batchnorm: bool,
-    model_rng: jax.random.PRNGKey,
     state: train_state.TrainState,
     batch: Tuple[jax.Array],
 ) -> Dict[str, jax.Array]:
@@ -88,7 +87,7 @@ def train_step(
     state: train_state.TrainState,
     batch: Tuple[jax.Array],
 ) -> Tuple[train_state.TrainState, jax.Array]:
-    """ One train step
+    """One train step
 
     Args:
         batchnorm (bool): whether to use batch normalisation or not
@@ -177,7 +176,9 @@ def get_scheduler(config: Config, total_steps: int) -> Schedule:
     return lr_scheduler
 
 
-def prepare_optimizer(config: Config, total_steps: int) -> Tuple[optax.GradientTransformation, Schedule]:
+def prepare_optimizer(
+    config: Config, total_steps: int
+) -> Tuple[optax.GradientTransformation, Schedule]:
     """Create optimizer and lr_scheduler
     Args:
         config (Config): Configuration for the project
@@ -210,7 +211,7 @@ def init_train_state(
     Args:
         batchnorm (bool): Whether the flax model uses batch norm or not
         model (nn.Module): flax module
-        optimizer (optax.GradientTransformation): Optimizer 
+        optimizer (optax.GradientTransformation): Optimizer
         init_rng (jax.random.PRNGKey): initialisation key
         batch (Tuple[jax.Array]): Input data, in the order expected by the model.
 
@@ -239,7 +240,7 @@ def init_train_state(
 
 
 def best_loss(structured: Any) -> float:
-    """Minimum loss 
+    """Minimum loss
 
     Args:
         structured (Any): Pytree of losses for each checkpoint
@@ -254,11 +255,13 @@ def best_loss(structured: Any) -> float:
 
 class TrainState(train_state.TrainState):
     """Train state which supports dropout key"""
+
     key: jax.Array
 
 
 class BatchNormTrainState(train_state.TrainState):
     """Train state which supports dropout key and stores batch statistics for batchnorm"""
+
     key: jax.Array
     batch_stats: Any
 
@@ -268,18 +271,20 @@ class Trainer:
 
     def __init__(
         self,
-        config: PyTree,
+        config: Config,
         out_dir: str,
         model: nn.Module,
         train_data: Iterable = None,
         train_dl: Iterable = None,
         data_collator: Callable = None,
-        evaluator: Evaluator = None,  # compute_metrics functions
+        evaluator: Evaluator = None,
         test_evaluator: Evaluator = None,
         wandb_run: WandbRun = None,
         rng: jax.random.PRNGKey = None,
         model_inputs_orded: Tuple[str] = ("input_ids", "labels"),
-        prepare_opt_fn=prepare_optimizer,
+        prepare_opt_fn: Callable[
+            [Config, int], Tuple[optax.GradientTransformation, Schedule]
+        ] = prepare_optimizer,
     ) -> None:
         init_rng, rng = jax.random.split(rng, 2)
         self.config = config
@@ -364,12 +369,30 @@ class Trainer:
             eval_step,
             static_argnums=(0,),
             in_shardings=(
-                NamedSharding(self._mesh, None),
                 self._state_sharding,
                 self._data_sharding,
             ),
             out_shardings=NamedSharding(self._mesh, None),
         )
+
+    @property
+    def train_step_fn(
+        self,
+    ) -> Callable[
+        [bool, jax.random.PRNGKey, train_state.TrainState, Tuple[jax.Array]],
+        Tuple[train_state.TrainState, jax.Array],
+    ]:
+        """Return Jitted train function"""
+        return self._train_step_fn
+
+    @property
+    def eval_step_fn(
+        self,
+    ) -> Callable[
+        [bool, train_state.TrainState, Tuple[jax.Array]], Dict[str, jax.Array]
+    ]:
+        """Return Jitted eval function"""
+        return self._eval_step_fn
 
     def sample_data(self) -> Tuple[jax.Array]:
         """Return Data sample
@@ -401,7 +424,7 @@ class Trainer:
             batch[k] = jax.device_put(v, data_sharding)
         return batch
 
-    def safe_wandb_log(self, log_data: Dict[str, Any]):
+    def safe_wandb_log(self, log_data: Dict[str, Any]) -> None:
         """Log data wiith the wandb_run if config allows for it.
 
         Args:
@@ -482,7 +505,7 @@ class Trainer:
             step_number (int, optional): The specific step to load. Defaults to None.
 
         Returns:
-            Tuple[train_state.TrainState, Dict[str, Any]]: Loaded train state and metadata, like iteration number when training stopped. 
+            Tuple[train_state.TrainState, Dict[str, Any]]: Loaded train state and metadata, like iteration number when training stopped.
         """
         options = ocp.CheckpointManagerOptions(create=False)
         mngr = ocp.CheckpointManager(
@@ -587,7 +610,6 @@ class Trainer:
     def trainer_eval(
         self,
         state: train_state.TrainState,
-        rng: jax.random.PRNGKey,
         batch: dict[str, jax.Array],
     ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """
@@ -595,9 +617,8 @@ class Trainer:
         """
         inputs = tuple([batch[k] for k in self.model_inputs_orded])
         inputs = jax.lax.stop_gradient(inputs)
-        output = self._eval_step_fn(
+        output = self.eval_step_fn(
             self.config.batchnorm,
-            rng,
             state,
             inputs,
         )
@@ -627,7 +648,7 @@ class Trainer:
                 batch = {k: batch[k] for k in self.model_inputs_orded}
                 batch = self.place_on_device(batch, self._data_sharding)
                 inputs = tuple([batch[k] for k in self.model_inputs_orded])
-                state, loss = self._train_step_fn(
+                state, loss = self.train_step_fn(
                     self.config.batchnorm,
                     model_rng,
                     state,
@@ -640,14 +661,14 @@ class Trainer:
                     # compute scores on test
                     if self._evaluator is not None:
                         train_rng, eval_rng = jax.random.split(train_rng)
-                        eval_fn = partial(self.trainer_eval, state, eval_rng)
+                        eval_fn = partial(self.trainer_eval, state)
                         scores = self._evaluator.evaluate(
                             trainer_eval_fn=eval_fn, prefix="eval_", state=state
                         )
                     # compute scores on test
                     if self._test_evaluator is not None:
                         train_rng, eval_rng = jax.random.split(train_rng)
-                        eval_fn = partial(self.trainer_eval, state, eval_rng)
+                        eval_fn = partial(self.trainer_eval, state)
                         test_scores = self._test_evaluator.evaluate(
                             trainer_eval_fn=eval_fn, prefix="test_", state=state
                         )

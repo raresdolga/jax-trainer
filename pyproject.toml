@@ -1,5 +1,5 @@
 [project]
-name = "jax-trainer"
+name = "tax"
 version = "0.1.0"
 description = "A fully sharded data prallel trainer for jax"
 authors = [
@@ -34,5 +34,5 @@ distribution = true
 include-package-data = false
 
 [tool.setuptools.packages.find]
-include = ["trainer*"]
+include = ["tax*"]
 exclude = ["tests*"]
