@@ -1,0 +1,27 @@
+lr: 1.e-3
+small_lr: 1.e-3
+lr_decay_fn: "cosine"
+warmup_pc: 0.0
+batch_size: 4 # 16 # 32 # 36 # 90
+epochs: 32
+dataset_name: "imdb" # "listops" # "pathfinder128" # "aan"
+pool: "mean"
+# dropout each layer
+dropout: 0.1
+weight_decay: 0.05
+batchnorm: False
+prenorm: True
+embed_type: "absolute" # "nope" #
+hidden_dim: 32 #256
+nlayers: 2 # 6
+nheads: 4 #
+max_seq_len: 4000
+pos_embed_max_len: 4000
+num_classes: 2
+unroll: 100
+eval_steps: 0
+eval_steps: 0 # every iter
+project: "run_name"
+entity: "proj_name"
+wandb_log: False # True # 
+disable_cache: False

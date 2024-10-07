@@ -67,6 +67,8 @@ class Config:
     max_checkpoints: int = 1
     # The learning rate"
     lr: float = 3e-4
+    # small lerning rate for models like ssm
+    small_lr: float = None
     # percentage of steps to do warmup out of total steps
     warmup_pc: float = 0
     # exact number of warmup steps, takes precedance over warmup_pc
@@ -132,3 +134,11 @@ class ModelConfig(Config):
     initializer_range: float = 0.02
     # normalize before or after mlp
     prenorm: bool = False
+
+
+@struct.dataclass
+class LRAConfig(ModelConfig):
+    """Properties specific to Long range Arena"""
+
+    pool: str = "mean"
+    num_classes: int = 2

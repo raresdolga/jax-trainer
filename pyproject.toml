@@ -16,6 +16,8 @@ dependencies = [
     "pip>=24.2",
     "jaxtyping>=0.2.34",
     "torch>=2.4.1",
+    "transformers>=4.45.1",
+    "datasets>=2.19.2",
 ]
 
 requires-python = ">=3.10"

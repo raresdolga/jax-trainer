@@ -108,7 +108,7 @@ class SotaTransBlock(nn.Module):
     ):
         pre_norm = nn.RMSNorm(dtype=self.dtype)
         mix_layer = BidirectionalAttention(self.config, self.dtype)
-        mlp_pre_norm = nn.RMSNorm(width=self.config.hidden_dim, dtype=self.dtype)
+        mlp_pre_norm = nn.RMSNorm(dtype=self.dtype)
         mlp = GatedMLP(
             hidden_dim=self.config.hidden_dim,
             intermediate_dim=4 * self.config.hidden_dim,
@@ -193,9 +193,10 @@ class TextImageEncoder(nn.Module):
                 max_len=self.config.pos_embed_max_len,
                 dtype=self.dtype,
             )
+        elif self.config.embed_type == "nope":
+            pos_embeds = None
         else:
-            raise Exception(f"Embed type {self.config.embed_type} not accepted")
-        # drop_embed = nn.Dropout(self.config.dropout, deterministic=not train)
+            raise ValueError(f"Embed type {self.config.embed_type} not accepted")
         ln = nn.RMSNorm()
         block = SotaTransBlock
         enc_layers = [
@@ -204,10 +205,8 @@ class TextImageEncoder(nn.Module):
         ]
         if not pos_embeds is None:
             X = pos_embeds(embed(X))
-            # X = drop_embed(X)
         else:  # relative or nope
             X = embed(X)
-            # X = drop_embed(X)
 
         if not self.config.prenorm:
             X = ln(X)
