@@ -1,7 +1,7 @@
 [project]
-name = "tax"
-version = "0.1.0"
-description = "A fully sharded data prallel trainer for jax"
+name = "tax-dp"
+version = "0.1.1"
+description = "A fully sharded data parallel trainer for jax"
 authors = [
     {name = "Rares Dolga", email = "rares.dolga.16@ucl.ac.uk"},
 ]
