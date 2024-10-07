@@ -103,6 +103,9 @@ class LMTask:
             self.report_to = "wandb"
             self.wandb_run = wandb_run
 
+    def update_config(self, tokenizer):
+        self.config = self.config.replace(vocab_size=tokenizer.vocab_size)
+
     def get_model(self, tokenizer: AutoTokenizer, sharded: bool = True):
         """Created and shard model
 
@@ -130,7 +133,6 @@ class LMTask:
 
         model = sharded_model(
             self.config,
-            vocab_size=tokenizer.vocab_size,
             pad_id=tokenizer.pad_token_id,
             dtype=mixed_precission,
             sharded=sharded,
@@ -148,6 +150,8 @@ class LMTask:
         data_collator = dp.get_collate_fn(
             return_type="np", max_seq_len=self.config.max_seq_len
         )
+        # add additional info like vocab size
+        self.update_config(tokenizer)
 
         model = self.get_model(tokenizer, sharded=True)
         train_rng, init_rng, eval_rng = jax.random.split(train_rng, 3)

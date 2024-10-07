@@ -92,7 +92,7 @@ class Gemma(nn.Module):
         """
 
         text_embed = Embedder(
-            vocab_size=self.config.text_vocab_size,
+            vocab_size=self.config.vocab_size,
             embed_dim=self.config.hidden_dim,
             scale_by_sqrt_dim=False,
             dtype=self.dtype,

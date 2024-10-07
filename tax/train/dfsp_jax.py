@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from .utils import Parameter, Metrics, Optimizer, TrainState, BatchNormTrainState
 from tax.config import Config
+from tax.evals.base import Evaluator
 
 
 @jax.named_scope("shard_params")
@@ -440,7 +441,7 @@ class DFSDPTrainer:
         model: nn.Module,
         train_data: Dataset,
         data_collator: Callable = None,
-        evaluator=None,
+        evaluator: Evaluator = None,
         wandb_run: Callable = None,
         rng: jt.Array = None,
         model_inputs_orded: Tuple = ("input_ids", "labels"),
@@ -448,7 +449,23 @@ class DFSDPTrainer:
         init_state_fn: Callable = init_train_state,
         prepare_optimizer_fn: Optimizer = prepare_optimizer,
     ) -> None:
+        """_summary_
 
+        Args:
+            config (Config): Configuration with trainer fields
+            out_dir (str): Directory where to save checkpoints and wandb data
+            model (nn.Module): Model class to train
+            train_data (Dataset): Tokenized train data
+            data_collator (Callable, optional): Collator for batching. Defaults to None.
+            evaluator (Evaluator, optional): Task specifc Evaluator. See evals.base for required interface. Defaults to None.
+            wandb_run (Callable, optional): Wandb run to log experiments. Defaults to None.
+            rng (jt.Array, optional): Random key. Defaults to None.
+            model_inputs_orded (Tuple, optional): Order to select inputs when batch as a dict is transformed to a tuple.
+                Should match the order of the model input. Defaults to ("input_ids", "labels").
+            model_outputs_orded (Tuple, optional): _description_. Defaults to ("loss", "logits").
+            init_state_fn (Callable, optional): _description_. Defaults to init_train_state.
+            prepare_optimizer_fn (Optimizer, optional): _description_. Defaults to prepare_optimizer.
+        """
         init_rng, rng = jax.random.split(rng, 2)
         self.config = config
         self._out_dir = out_dir
@@ -534,7 +551,6 @@ class DFSDPTrainer:
                 partial(eval_step_dp, self.config.batchnorm),
                 mesh,
                 in_specs=(
-                    PartitionSpec(),
                     self.state_spec,
                     PartitionSpec(
                         "B",
@@ -548,7 +564,7 @@ class DFSDPTrainer:
                 ),
                 check_rep=False,
             ),
-            donate_argnums=(1, 2),
+            donate_argnums=(1,),
         )
         self.mesh = mesh
 
@@ -651,15 +667,21 @@ class DFSDPTrainer:
         state: train_state.TrainState,
         val_rng: jax.random.PRNGKey,
         batch: Dict[str, jt.Array],
-    ):
-        """
-        Places data on correct device and calls the model on the batch
+    ) -> Tuple[jt.Array, Dict[str, jt.Array]]:
+        """Places data on correct device and calls the model on the batch
+
+        Args:
+            state (train_state.TrainState): model current trained state
+            val_rng (jax.random.PRNGKey): random number for validation (not currently used)
+            batch (Dict[str, jt.Array]): Input data
+
+        Returns:
+            Tuple[jt.Array, Dict[str, jt.Array]]: Targets and model output
         """
         # batch = self.place_on_device(batch, self.sharding_data)
         inputs = tuple([batch[k] for k in self.model_inputs_orded])
         inputs = jax.lax.stop_gradient(inputs)
         output = self.eval_step_fn(
-            val_rng,
             state,
             inputs,
         )

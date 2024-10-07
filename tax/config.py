@@ -116,6 +116,7 @@ class ModelConfig(Config):
     head_dim: int = None
     # Hidden dimension
     hidden_dim: int = 128
+    intermediate_dim: int = 2048
     # Dimention for the rotation matrix
     L: int = 10
     latte_nheads: int = 1
@@ -150,5 +151,5 @@ class LRAConfig(ModelConfig):
 class LMConfig(ModelConfig):
     """Properties specific to Long range Arena"""
 
-    pool: str = "mean"
-    num_classes: int = 2
+    vocab_size: int = None
+    attention_bias: bool = False
