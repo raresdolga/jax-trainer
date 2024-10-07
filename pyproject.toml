@@ -11,7 +11,7 @@ dependencies = [
     "wandb==0.17.2",
     "black>=24.8.0",
     "flax==0.8.4",
-    "orbax-checkpoint==0.5.17",
+    "orbax-checkpoint==0.6.4",
     "matplotlib>=3.9.1",
     "pip>=24.2",
     "jaxtyping>=0.2.34",

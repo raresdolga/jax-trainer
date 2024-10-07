@@ -11,6 +11,7 @@ Disadvantages:
 """
 
 from typing import Any, Dict, Tuple, Callable, Iterable, Union
+import jaxtyping as jt
 import json
 from functools import partial
 import os
@@ -34,9 +35,8 @@ import wandb.sdk
 from tax.lr_schedules import vaswani_lr_schedule
 from tax.evals.base import Evaluator
 from tax.config import Config
+from .utils import Optimizer, TrainState, BatchNormTrainState
 
-PyTree = Any
-Metrics = Dict[str, Tuple[jax.Array, ...]]
 WandbRun = Union[wandb.apis.public.Run, None]
 
 
@@ -61,8 +61,8 @@ def fold_rng_over_axis(rng: jax.random.PRNGKey, axis_name: str) -> jax.random.PR
 def eval_step(
     batchnorm: bool,
     state: train_state.TrainState,
-    batch: Tuple[jax.Array],
-) -> Dict[str, jax.Array]:
+    batch: Tuple[jt.Array],
+) -> Dict[str, jt.Array]:
     params = state.params
     batch = jax.lax.stop_gradient(batch)
     if batchnorm:
@@ -85,18 +85,18 @@ def train_step(
     batchnorm: bool,
     model_rng: jax.random.PRNGKey,
     state: train_state.TrainState,
-    batch: Tuple[jax.Array],
-) -> Tuple[train_state.TrainState, jax.Array]:
+    batch: Tuple[jt.Array],
+) -> Tuple[train_state.TrainState, jt.Array]:
     """One train step
 
     Args:
         batchnorm (bool): whether to use batch normalisation or not
         model_rng (jax.random.PRNGKey): random key
         state (train_state.TrainState): Flax Trainer state
-        batch (jax.Array): Input data, in the order expected by the model.
+        batch (jt.Array): Input data, in the order expected by the model.
 
     Returns:
-        Tuple[train_state.TrainState, jax.Array]: new state and the loss
+        Tuple[train_state.TrainState, jt.Array]: new state and the loss
     """
     dropout_train_key = jax.random.fold_in(key=model_rng, data=state.step)
 
@@ -204,7 +204,7 @@ def init_train_state(
     model: nn.Module,
     optimizer: optax.GradientTransformation,
     init_rng: jax.random.PRNGKey,
-    batch: Tuple[jax.Array],
+    batch: Tuple[jt.Array],
 ) -> train_state.TrainState:
     """Initialiases the model and creates the training state
 
@@ -213,7 +213,7 @@ def init_train_state(
         model (nn.Module): flax module
         optimizer (optax.GradientTransformation): Optimizer
         init_rng (jax.random.PRNGKey): initialisation key
-        batch (Tuple[jax.Array]): Input data, in the order expected by the model.
+        batch (Tuple[jt.Array]): Input data, in the order expected by the model.
 
     Returns:
         train_state.TrainState: Flax trainig state
@@ -253,19 +253,6 @@ def best_loss(structured: Any) -> float:
     return min(flat)
 
 
-class TrainState(train_state.TrainState):
-    """Train state which supports dropout key"""
-
-    key: jax.Array
-
-
-class BatchNormTrainState(train_state.TrainState):
-    """Train state which supports dropout key and stores batch statistics for batchnorm"""
-
-    key: jax.Array
-    batch_stats: Any
-
-
 class Trainer:
     """Simple trainer on a single Host"""
 
@@ -282,9 +269,7 @@ class Trainer:
         wandb_run: WandbRun = None,
         rng: jax.random.PRNGKey = None,
         model_inputs_orded: Tuple[str] = ("input_ids", "labels"),
-        prepare_opt_fn: Callable[
-            [Config, int], Tuple[optax.GradientTransformation, Schedule]
-        ] = prepare_optimizer,
+        prepare_opt_fn: Optimizer = prepare_optimizer,
     ) -> None:
         init_rng, rng = jax.random.split(rng, 2)
         self.config = config
@@ -379,8 +364,8 @@ class Trainer:
     def train_step_fn(
         self,
     ) -> Callable[
-        [bool, jax.random.PRNGKey, train_state.TrainState, Tuple[jax.Array]],
-        Tuple[train_state.TrainState, jax.Array],
+        [bool, jax.random.PRNGKey, train_state.TrainState, Tuple[jt.Array]],
+        Tuple[train_state.TrainState, jt.Array],
     ]:
         """Return Jitted train function"""
         return self._train_step_fn
@@ -388,17 +373,15 @@ class Trainer:
     @property
     def eval_step_fn(
         self,
-    ) -> Callable[
-        [bool, train_state.TrainState, Tuple[jax.Array]], Dict[str, jax.Array]
-    ]:
+    ) -> Callable[[bool, train_state.TrainState, Tuple[jt.Array]], Dict[str, jt.Array]]:
         """Return Jitted eval function"""
         return self._eval_step_fn
 
-    def sample_data(self) -> Tuple[jax.Array]:
+    def sample_data(self) -> Tuple[jt.Array]:
         """Return Data sample
 
         Returns:
-            Tuple[jax.Array]: Data in the order expected by the model
+            Tuple[jt.Array]: Data in the order expected by the model
         """
         data = next(iter(self.train_dl))
         # TODO: Investigate why dictionary does not work for jit
@@ -407,16 +390,16 @@ class Trainer:
 
     @staticmethod
     def place_on_device(
-        batch: Iterable[jax.Array], data_sharding: NamedSharding = None
-    ) -> Iterable[jax.Array]:
+        batch: Iterable[jt.Array], data_sharding: NamedSharding = None
+    ) -> Iterable[jt.Array]:
         """Move data to the device dicated by the sharding
 
         Args:
-            batch (Iterable[jax.Array]): Input data
+            batch (Iterable[jt.Array]): Input data
             data_sharding (NamedSharding, optional): Description of how data should be placed on the device. Defaults to None.
 
         Returns:
-            Iterable[jax.Array]: Input data
+            Iterable[jt.Array]: Input data
         """
         if data_sharding is None:
             return batch
@@ -439,14 +422,14 @@ class Trainer:
                 self.wandb_run.log({"gen_table": gen_table})
 
     def get_shardings(
-        self, init_rng: jax.random.PRNGKey, data: Tuple[jax.Array]
+        self, init_rng: jax.random.PRNGKey, data: Tuple[jt.Array]
     ) -> Tuple[Mesh, NamedSharding, NamedSharding]:
         """Create descriptions on how the model and data should be split across devices.
         For this trainer the mdoel is replicated and data is split across batch dimension
 
         Args:
             init_rng (jax.random.PRNGKey): initialisation key
-            data (Tuple[jax.Array]): Data as expected by the model.
+            data (Tuple[jt.Array]): Data as expected by the model.
 
         Returns:
             Tuple[Mesh, NamedSharding, NamedSharding]: The devices on the host and description on how to place arrays on them.
@@ -537,8 +520,8 @@ class Trainer:
     @staticmethod
     def create_zero_state(
         rng: jax.random.PRNGKey,
-        data: Tuple[jax.Array],
-        config: PyTree,
+        data: Tuple[jt.Array],
+        config: Config,
         model: nn.Module,
     ) -> train_state.TrainState:
         """Create a dummy state with zeros. Helper for loading pre-traiend checkpoints.
@@ -610,8 +593,8 @@ class Trainer:
     def trainer_eval(
         self,
         state: train_state.TrainState,
-        batch: dict[str, jax.Array],
-    ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
+        batch: dict[str, jt.Array],
+    ) -> Tuple[jt.Array, Dict[str, jt.Array]]:
         """
         Places data on correct device and calls the model on the batch
         """

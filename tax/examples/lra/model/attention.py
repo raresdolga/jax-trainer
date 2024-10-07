@@ -1,4 +1,4 @@
-from typing import Type
+import jaxtyping as jt
 import math
 import jax
 from flax import linen as nn
@@ -25,8 +25,8 @@ class BidirectionalAttention(nn.Module):
 
     @nn.compact
     def __call__(
-        self, src: jax.Array, train: bool, attention_mask: jax.Array, **kwargs
-    ) -> jax.Array:
+        self, src: jt.Array, train: bool, attention_mask: jt.Array, **kwargs
+    ) -> jt.Array:
         # key, query, value projections for all heads, but in a batch
         Wq = nn.Dense(
             self.config.hidden_dim,

@@ -63,6 +63,8 @@ class Config:
     train_steps: int = None
     # number of steps between evaluation
     eval_steps: int = 10
+    # number of samples in validation data to use for evaluation
+    eval_samples: int = None
     # The maximum number of checkpoints to save
     max_checkpoints: int = 1
     # The learning rate"
@@ -138,6 +140,14 @@ class ModelConfig(Config):
 
 @struct.dataclass
 class LRAConfig(ModelConfig):
+    """Properties specific to Long range Arena"""
+
+    pool: str = "mean"
+    num_classes: int = 2
+
+
+@struct.dataclass
+class LMConfig(ModelConfig):
     """Properties specific to Long range Arena"""
 
     pool: str = "mean"

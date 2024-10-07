@@ -1,7 +1,12 @@
 import argparse
 
 
-def parse_args():
+def parse_args() -> argparse.ArgumentParser:
+    """Get terminal arguments
+
+    Returns:
+        argparse.ArgumentParser: passed arguments
+    """
     # construct the argument parser and parser the arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(

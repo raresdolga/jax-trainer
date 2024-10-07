@@ -2,57 +2,30 @@ from typing import Any, Dict, Tuple, Callable, List
 import jaxtyping as jt
 from functools import partial
 import os
-import logging
 import json
 from tqdm.auto import tqdm
 import numpy as np
 import jax
 from jax import lax
-from jax import numpy as jnp
 from jax.tree_util import tree_flatten
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec
 from jax.experimental.shard_map import shard_map
 from flax import linen as nn
-from flax.training.train_state import TrainState
+from flax.training import train_state
 import wandb
 import orbax.checkpoint as ocp
 import optax
 from torch.utils.data import DataLoader, Dataset
 
-from trainer.config import Config
-
-PyTree = Any
-Parameter = jt.Array | nn.Partitioned
-Metrics = Dict[str, Tuple[jt.Array, ...]]
-Optimizer = Callable[[Config, int], Tuple[optax.GradientTransformation, optax.Schedule]]
-
-
-LOG = logging.getLogger(__name__)
-
-
-class DropTrainState(TrainState):
-    """
-    FLax train state with additional key for dropout
-    """
-
-    key: jt.Array
-
-
-class BatchNormTrainState(TrainState):
-    """
-    FLax train state with additional key for dropout and
-    stistics for batch norm
-    """
-
-    key: jt.Array
-    batch_stats: Dict[str, jt.Array]
+from .utils import Parameter, Metrics, Optimizer, TrainState, BatchNormTrainState
+from tax.config import Config
 
 
 @jax.named_scope("shard_params")
 def shard_params(
-    params: PyTree, axis_name: str, min_weight_size: int = 2**18
-) -> PyTree:
+    params: Parameter, axis_name: str, min_weight_size: int = 2**18
+) -> Parameter:
     """Shard parameters across the given mesh axis.
 
     Args:
@@ -73,12 +46,12 @@ def shard_params(
             value = x
             names = (None,) * value.ndim
         if axis_name in names:
-            logging.warning(
+            print(
                 f"Parameter {value.shape} with names {names} already sharded on axis {axis_name}."
             )
             return x
         elif value.size <= min_weight_size:
-            logging.info(
+            print(
                 f"Parameter {value.shape} with names {names} too small to shard, size {value.size} < {min_weight_size}."
             )
             return x
@@ -95,7 +68,7 @@ def shard_params(
                         names=names[:i] + (axis_name,) + names[i + 1 :],
                     )
                     return p_sharded
-            logging.warning(
+            print(
                 f"Could not shard {value.shape} with names {names} on axis {axis_name}, no suitable axis found."
             )
             return x
@@ -129,7 +102,7 @@ def gather_array_with_mean_grads(x: jt.Array, axis: int, axis_name: str):
 
 
 @jax.named_scope("gather_params")
-def gather_params(params: PyTree, axis_name: str) -> PyTree:
+def gather_params(params: Parameter, axis_name: str) -> Parameter:
     """Gather parameters from all replicas across the given axis.
 
     Args:
@@ -189,9 +162,9 @@ def shard_module_params(
 
 
 def sync_gradients(
-    grads: PyTree,
+    grads: Parameter,
     axis_names: List[str],
-) -> PyTree:
+) -> Parameter:
     """Synchronize gradients across devices.
 
     Gradients for parameters that are replicated over a given axis are averaged across devices.
@@ -298,7 +271,7 @@ def train_step_dp(
     model_rng = jax.random.fold_in(model_rng, axis_index)
     model_rng, dropout_key = jax.random.split(model_rng)
 
-    def loss_fn(params: PyTree):
+    def loss_fn(params: Parameter):
         if batchnorm:
             output, updates = state.apply_fn(
                 {"params": params, "batch_stats": state.batch_stats},
@@ -434,7 +407,7 @@ def init_train_state(
             key=dropout_rng,
         )
     else:
-        state = DropTrainState.create(
+        state = TrainState.create(
             apply_fn=model.apply,
             tx=optimizer,
             params=variables["params"],
@@ -443,7 +416,7 @@ def init_train_state(
     return state
 
 
-def best_loss(structured: PyTree) -> float:
+def best_loss(structured: Parameter) -> float:
     """
     Calculate the best metric for checkpointing among proposed values.
     We use loss, so minimum is desired
@@ -458,13 +431,14 @@ def best_loss(structured: PyTree) -> float:
 
 
 class DFSDPTrainer:
+    """Fully sharded distributed training"""
+
     def __init__(
         self,
         config: Config,
         out_dir: str,
         model: nn.Module,
         train_data: Dataset,
-        test_data: Dataset = None,
         data_collator: Callable = None,
         evaluator=None,
         wandb_run: Callable = None,
@@ -491,7 +465,6 @@ class DFSDPTrainer:
 
         if jax.process_index() == 0:
             os.makedirs(self._out_dir, exist_ok=True)
-            # jax.debug.print("Train data {x} ", x=train_data)
 
         options = ocp.CheckpointManagerOptions(
             max_to_keep=self.max_checkpoints,
@@ -515,7 +488,6 @@ class DFSDPTrainer:
             shuffle=self.config.shuffle_train,
             collate_fn=self.data_collator,
             drop_last=True,  # needs batch size to be devidable by number of gpus
-            # sampler=sampler1
         )
         self.wandb_run = wandb_run
 
@@ -535,12 +507,12 @@ class DFSDPTrainer:
                         "B",
                     ),
                 ),  # PRNG key and x
-                out_specs=self.state_spec,  # out_spec #PartitionSpec(None),
+                out_specs=self.state_spec,
                 check_rep=False,
             )
         )(k, d)
 
-        self._train_step = jax.jit(
+        self._train_step_fn = jax.jit(
             shard_map(
                 partial(train_step_dp, self.config.batchnorm),
                 mesh,
@@ -557,7 +529,7 @@ class DFSDPTrainer:
             donate_argnums=(1, 2),
         )
         # batchnorm, rng, state, batch
-        self._eval_step = jax.jit(
+        self._eval_step_fn = jax.jit(
             shard_map(
                 partial(eval_step_dp, self.config.batchnorm),
                 mesh,
@@ -579,6 +551,23 @@ class DFSDPTrainer:
             donate_argnums=(1, 2),
         )
         self.mesh = mesh
+
+    @property
+    def train_step_fn(
+        self,
+    ) -> Callable[
+        [bool, jax.random.PRNGKey, train_state.TrainState, Tuple[jt.Array]],
+        Tuple[train_state.TrainState, jt.Array],
+    ]:
+        """Return Jitted train function"""
+        return self._train_step_fn
+
+    @property
+    def eval_step_fn(
+        self,
+    ) -> Callable[[bool, train_state.TrainState, Tuple[jt.Array]], Dict[str, jt.Array]]:
+        """Return Jitted eval function"""
+        return self._eval_step_fn
 
     def safe_wandb_log(self, log_data: Dict[str, Any]):
         """
@@ -657,14 +646,19 @@ class DFSDPTrainer:
 
         return state_fsdp_specs, mesh
 
-    def trainer_eval(self, state, val_rng, batch):
+    def trainer_eval(
+        self,
+        state: train_state.TrainState,
+        val_rng: jax.random.PRNGKey,
+        batch: Dict[str, jt.Array],
+    ):
         """
         Places data on correct device and calls the model on the batch
         """
         # batch = self.place_on_device(batch, self.sharding_data)
         inputs = tuple([batch[k] for k in self.model_inputs_orded])
         inputs = jax.lax.stop_gradient(inputs)
-        output = self._eval_step(
+        output = self.eval_step_fn(
             val_rng,
             state,
             inputs,
@@ -678,7 +672,13 @@ class DFSDPTrainer:
         output = {k: output[k] for k in self.model_outputs_orded}
         return batch["labels"], output
 
-    def _train(self, train_rng, total_steps, start_it, state):
+    def _train(
+        self,
+        train_rng: jax.random.PRNGKey,
+        total_steps: int,
+        start_it: int,
+        state: train_state.TrainState,
+    ):
         it = start_it
         if jax.process_index() == 0:
             param_count = sum(x.size for x in jax.tree_util.tree_leaves(state.params))
@@ -692,12 +692,11 @@ class DFSDPTrainer:
                 train_rng, model_rng = jax.random.split(train_rng)
                 # batch = self.place_on_device(batch, self.sharding_data)
                 inputs = tuple([batch[k] for k in self.model_inputs_orded])
-                state, loss = self._train_step(
+                state, loss = self.train_step_fn(
                     model_rng,
                     state,
                     inputs,
                 )
-                loss = jax.experimental.multihost_utils.process_allgather(loss)
                 train_loss.append(loss)
 
                 if (it > 0 and it % self.eval_steps == 0) or (it >= total_steps):
@@ -707,14 +706,13 @@ class DFSDPTrainer:
                         trainer_eval_fn=eval_fn, prefix="eval_", state=state
                     )
 
-                    tr_loss = train_loss  # jax.device_get(train_loss)
+                    tr_loss = train_loss
                     scores["train_loss"] = np.mean(tr_loss)
                     scores["learning_rate"] = float(self._lr_scheduler(it))
 
                     scores["it"] = it
                     all_scores.append(scores)
                     if jax.process_index() == 0:
-                        # jax.debug.print("Path: {x}", x=os.path.join(self._out_dir, "checkpoints"))
                         jax.debug.print("Train Loss {x}", x=scores["train_loss"])
                         jax.debug.print("Evaluation scores: {x}", x=scores)
                         self.safe_wandb_log(scores)
@@ -728,7 +726,6 @@ class DFSDPTrainer:
                             metadata=ocp.args.JsonSave(metadata),
                         ),
                     )
-                    # self.checkpoint_manager.wait_until_finished()
                 it += 1
                 if jax.process_index() == 0:
                     progress_bar.update(1)
@@ -743,8 +740,10 @@ class DFSDPTrainer:
 
     @staticmethod
     def load_trainer_state(
-        empty_state: TrainState, check_dir: str = None, step_number: int = None
-    ) -> TrainState:
+        empty_state: train_state.TrainState,
+        check_dir: str = None,
+        step_number: int = None,
+    ) -> train_state.TrainState:
         """Takes a dummy state and loads the pre-trained state from a checkpoint.
         Dummy state is necessary for the orbax checkpoint manager. -- Blame the library not me
         Args:
@@ -786,7 +785,7 @@ class DFSDPTrainer:
 
     def train(
         self, train_rng: jax.random.PRNGKey, state=None, checkpoint_path: str = None
-    ) -> Tuple[TrainState, Dict[str, Any]]:
+    ) -> Tuple[train_state.TrainState, Dict[str, Any]]:
         init_rng, train_rng = jax.random.split(train_rng)
 
         start_it = 0
@@ -806,9 +805,14 @@ class DFSDPTrainer:
             start_it = metadata["step"]
 
         jax.debug.print("Trainer total steps: {x}", x=self.total_steps)
-        state = self._train(
-            train_rng, total_steps=self.total_steps, start_it=start_it, state=state
-        )
+        try:
+            state = self._train(
+                train_rng, total_steps=self.total_steps, start_it=start_it, state=state
+            )
+        except:
+            raise
+        finally:
+            self.checkpoint_manager.wait_until_finished()
         # list of dicts to dicts of list
         metrics = self._eval_metrics
         if len(self._eval_metrics) > 0:

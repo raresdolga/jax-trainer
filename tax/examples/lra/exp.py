@@ -2,14 +2,10 @@
 
 import os
 import wandb
-import logging
-from typing import Tuple
-from functools import partial
 import jax
-import optax
 from datasets import disable_caching
 from tax.examples.utils import parse_args
-from tax.train.jax_single_host import Trainer as JaxTrainer, get_scheduler
+from tax.train.jax_single_host import Trainer as JaxTrainer
 from tax.examples.lra.model.task import Classification, Retreival
 from tax.config import LRAConfig
 from tax.evals.class_eval import ClassificEvaluator
@@ -25,72 +21,6 @@ from tax.examples.lra.lra_dp import (
     IMBDDP,
     Cifrar10DP,
 )
-
-logging.basicConfig(
-    format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
-    datefmt="%Y-%m-%d:%H:%M:%S",
-    level=logging.INFO,
-)
-LOG = logging.getLogger(__name__)
-
-
-def map_nested_fn(fn):
-    """
-    Recursively apply `fn to the key-value pairs of a nested dict / pytree.
-    We use this for some of the optax definitions below.
-    """
-
-    def map_fn(nested_dict):
-        return {
-            k: (map_fn(v) if hasattr(v, "keys") else fn(k, v))
-            for k, v in nested_dict.items()
-        }
-
-    return map_fn
-
-
-def prepare_optimizer(
-    config: LRAConfig, total_steps: int
-) -> Tuple[optax.GradientTransformation, optax.Schedule]:
-    lr_scheduler = get_scheduler(config=config, total_steps=total_steps)
-
-    ssm_fn = map_nested_fn(
-        lambda k, _: (
-            "ssm"
-            if k
-            in [
-                "B",
-                "Lambda_re",
-                "Lambda_im",
-                "log_step",
-                "norm",
-                "theta_log",
-                "nu_log",
-                "gamma_log",
-                "B_re",
-                "B_im",
-            ]
-            else "regular"
-        )
-    )
-
-    regular_opt = optax.inject_hyperparams(optax.adamw)(
-        learning_rate=lr_scheduler, weight_decay=config.weight_decay
-    )
-
-    optimizer = optax.multi_transform(
-        {
-            "ssm": optax.inject_hyperparams(optax.adam)(learning_rate=config.small_lr),
-            "regular": regular_opt,
-        },
-        ssm_fn,
-    )
-
-    if config.grad_accumulation_steps > 1:
-        optimizer = optax.MultiSteps(optimizer, config.grad_accumulation_steps)
-    # chain with norm
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optimizer)
-    return optimizer, lr_scheduler
 
 
 def get_lra_dp(config: LRAConfig):
@@ -129,7 +59,7 @@ def get_lra_dp(config: LRAConfig):
         dp = Cifrar10DP(
             cache_dir=cache_dir, normalize=config.normalize_img, tokenizer=tokenizer
         )
-        LOG.info("The data processor is %s ", dp)
+        print(f"The data processor is {dp} ")
         raw_data = dp.get_raw_data()
         tok_data = dp.tokenize(raw_data)
     else:
@@ -139,7 +69,7 @@ def get_lra_dp(config: LRAConfig):
 
 class LRATask:
     def __init__(self, config: LRAConfig) -> None:
-        LOG.info("Config is %s", config)
+        print(f"Config is {config}")
         self.config = config
         self.report_to = "none"
         self.wandb_run = None
@@ -207,7 +137,6 @@ class LRATask:
             wandb_run=self.wandb_run,
             rng=init_rng,
             model_inputs_orded=("input_ids", "labels"),
-            prepare_opt_fn=prepare_optimizer,
         )
         if not self.config.check_path is None:
             trainer.train(train_rng, self.config.check_path)
@@ -225,7 +154,7 @@ def main():
     )
 
     if config.disable_cache:
-        LOG.info("Disabling Cache")
+        print("Disabling Cache")
         disable_caching()
 
     task = LRATask(config)
