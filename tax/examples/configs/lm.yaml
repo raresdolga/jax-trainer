@@ -1,9 +1,8 @@
-# used to do pre-training by freezing gemma weights.
-lr: 6.e-4 # 2.e-5 #0.00025
+lr: 6.e-4
 lr_decay_fn: "cosine"
 lr_end_value: 6.e-9 # used for linear decay only
-train_steps: 100000 # 10000 # 800000 # 600000*grad_accum
-# warmup_pc: # 0.025 # rought 15000 for 
+train_steps: 100000 
+# warmup_pc: # 0.025
 warmup: 2000
 batch_size: 4 # 32 # 60 #  12 #
 shuffle_train: True
@@ -14,16 +13,12 @@ weight_decay: 0.01
 dataset_name: "tiny-stories"
 unroll: 1024
 max_seq_len: 4096 #
-pos_embed_max_len: 4096 # 32000 #  1024 # 2048
-eval_samples: 100 # 40 # average over 30 batches
-eval_steps: 100 # 2000 #2000 *grad_accum
+pos_embed_max_len: 4096 
+eval_samples: 100 
+eval_steps: 100 
 max_checkpoints: 2
-#check_path: ""
-#run_id: "gtbb6lv6"
 wandb_log: False #  True #  
 disable_cache:  False # 
-
-# dropout each layer
 dropout: 0.0
 dropout_att: 0.0
 prenorm: True
