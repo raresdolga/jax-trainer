@@ -1,8 +1,8 @@
 from typing import Any, Dict, Tuple, Callable, List
-import jaxtyping as jt
 from functools import partial
 import os
 import json
+import jaxtyping as jt
 from tqdm.auto import tqdm
 import numpy as np
 import jax
@@ -18,9 +18,9 @@ import orbax.checkpoint as ocp
 import optax
 from torch.utils.data import DataLoader, Dataset
 
-from .utils import Parameter, Metrics, Optimizer, TrainState, BatchNormTrainState
 from tax.config import Config
 from tax.evals.base import Evaluator
+from .utils import Parameter, Optimizer, TrainState, BatchNormTrainState
 
 
 @jax.named_scope("shard_params")
@@ -32,7 +32,8 @@ def shard_params(
     Args:
         params: The parameters to shard.
         axis_name: The axis to shard parameters across.
-        min_weight_size: The minimum size of a parameter to shard. Parameters with fewer values will not be sharded.
+        min_weight_size: The minimum size of a parameter to shard.
+            Parameters with fewer values will not be sharded.
 
     Returns:
         PyTree of same structure as params, but with leaves sharded over new axis if possible.
@@ -48,12 +49,14 @@ def shard_params(
             names = (None,) * value.ndim
         if axis_name in names:
             print(
-                f"Parameter {value.shape} with names {names} already sharded on axis {axis_name}."
+                f"Parameter {value.shape} with names {names}"
+                "already sharded on axis {axis_name}."
             )
             return x
         elif value.size <= min_weight_size:
             print(
-                f"Parameter {value.shape} with names {names} too small to shard, size {value.size} < {min_weight_size}."
+                f"Parameter {value.shape} with names {names} too small to shard,"
+                "size {value.size} < {min_weight_size}."
             )
             return x
         else:
@@ -70,7 +73,8 @@ def shard_params(
                     )
                     return p_sharded
             print(
-                f"Could not shard {value.shape} with names {names} on axis {axis_name}, no suitable axis found."
+                f"Could not shard {value.shape} with names {names} on axis {axis_name}, "
+                "no suitable axis found."
             )
             return x
 
@@ -111,7 +115,8 @@ def gather_params(params: Parameter, axis_name: str) -> Parameter:
         axis_name: The axis to gather parameters across.
 
     Returns:
-        PyTree of same structure as params, but with leaves gathered if they were a nn.Partitioned object.
+        PyTree of same structure as params, but with leaves gathered
+            if they were a nn.Partitioned object.
     """
 
     def _gather(p: Parameter) -> Parameter:
@@ -146,7 +151,8 @@ def shard_module_params(
     Args:
         target: The module to shard.
         axis_name: The axis name to shard parameters across.
-        min_weight_size: The minimum size of a parameter to shard. Parameters with fewer values will not be sharded.
+        min_weight_size: The minimum size of a parameter to shard.
+            Parameters with fewer values will not be sharded.
 
     Returns:
         The module with sharded parameters.
@@ -449,7 +455,7 @@ class DFSDPTrainer:
         init_state_fn: Callable = init_train_state,
         prepare_optimizer_fn: Optimizer = prepare_optimizer,
     ) -> None:
-        """_summary_
+        """Data parallel fully sharded trainer
 
         Args:
             config (Config): Configuration with trainer fields
@@ -457,14 +463,19 @@ class DFSDPTrainer:
             model (nn.Module): Model class to train
             train_data (Dataset): Tokenized train data
             data_collator (Callable, optional): Collator for batching. Defaults to None.
-            evaluator (Evaluator, optional): Task specifc Evaluator. See evals.base for required interface. Defaults to None.
+            evaluator (Evaluator, optional): Task specifc Evaluator. See evals.base
+                for required interface. Defaults to None.
             wandb_run (Callable, optional): Wandb run to log experiments. Defaults to None.
             rng (jt.Array, optional): Random key. Defaults to None.
-            model_inputs_orded (Tuple, optional): Order to select inputs when batch as a dict is transformed to a tuple.
-                Should match the order of the model input. Defaults to ("input_ids", "labels").
-            model_outputs_orded (Tuple, optional): _description_. Defaults to ("loss", "logits").
-            init_state_fn (Callable, optional): _description_. Defaults to init_train_state.
-            prepare_optimizer_fn (Optimizer, optional): _description_. Defaults to prepare_optimizer.
+            model_inputs_orded (Tuple, optional): Order to select inputs when batch as a
+                dict is transformed to a tuple. Should match the order of the model input.
+                    Defaults to ("input_ids", "labels").
+            model_outputs_orded (Tuple, optional): Keys in the dictionary outputed by the model.
+                Defaults to ("loss", "logits").
+            init_state_fn (Callable, optional): Function to initialise the model.
+                Defaults to init_train_state.
+            prepare_optimizer_fn (Optimizer, optional): Function which creates the optimizer.
+                Defaults to prepare_optimizer.
         """
         init_rng, rng = jax.random.split(rng, 2)
         self.config = config

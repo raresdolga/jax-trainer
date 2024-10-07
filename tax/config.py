@@ -1,7 +1,7 @@
 """Config object passed to trainer and models.
 """
 
-from typing import Literal
+from typing import Literal, Dict, Any
 from flax import struct
 import yaml
 
@@ -34,7 +34,19 @@ class Config:
         return cls(**config)
 
     @classmethod
-    def validate(cls, config):
+    def validate(cls, config: Dict[str, Any]):
+        """Check if attributes are correct
+
+        Args:
+            config (Comfig): Con
+
+        Raises:
+            NotImplementedError: _description_
+            NotImplementedError: _description_
+
+        Returns:
+            _type_: _description_
+        """
         if not "name" in config:
             raise NotImplementedError(
                 "Experiemnt must have a name. Default not supported"

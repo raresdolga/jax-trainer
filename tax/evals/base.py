@@ -26,7 +26,7 @@ class Evaluator(abc.ABC):
 
     @abc.abstractmethod
     def compute_metrics(self, *args, **kwargs) -> Dict[str, jax.Array]:
-        """Calculate metrics given the output of the model. 
+        """Calculate metrics given the output of the model.
 
         Returns:
             Dict[str, jax.Array]: Output metrics

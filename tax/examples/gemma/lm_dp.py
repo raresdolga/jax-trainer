@@ -104,7 +104,8 @@ class TinyStories:
             truncation=False,
             return_length=True,
         )
-        # TODO: this is a bit slow because add_special_tokens does not work with self added tokens - investigate
+        # TODO: this is a bit slow because add_special_tokens
+        # does not work with self added tokens - investigate
         elements["input_ids"] = [
             [self._tokenizer.bos_token_id] + elements["input_ids"][i]
             for i in range(len(elements["input_ids"]))
@@ -126,7 +127,7 @@ class TinyStories:
             desc="Tokenizing Tiny Stories dataset",
             load_from_cache_file=False,  # extra preproc time to save disk
         )
-        dataset_path = Path(self._cache_dir)  # / "tiny-stories-concat"
+        dataset_path = Path(self._cache_dir)
         dataset_path.mkdir(parents=True, exist_ok=True)
 
         for split, tokens in tokenized.items():

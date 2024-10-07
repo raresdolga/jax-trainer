@@ -28,6 +28,8 @@ license = {text = "MIT"}
 build-backend = "pdm.backend"
 requires = ["pdm-backend"]
 
+[tool.black]
+line-length = 88
 
 [tool.pdm]
 distribution = true
